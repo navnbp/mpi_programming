@@ -1,99 +1,124 @@
 #include <stdio.h>
-#include "mpi.h"
 #include <stdlib.h>
-#include <math.h>
-#include <string.h>
-#include <time.h>
+#include <pthread.h>
 
-int main (int argc, char* argv[])
+ int       bin_ct,i=0,data_count,input_Array_size,my_rank,comm_sz,bin,total_threads;
+  int*      counts;
+  float     minimum,interval,maximum;
+  float*    input_Array;
+pthread_mutex_t pthread;
+  float*    boundries; 
+
+
+void Read_Data( )
+ {
+  
+    printf("Number of elements for ploting graph  \n");
+    scanf("%d",&data_count);
+    
+    printf("Number of bins ( Intervals)  \n");
+    scanf("%d",&bin_ct);
+    
+    printf("Minimum value / Starting value  \n");
+    scanf("%f",&minimum);
+    
+    printf("Maximum value / End Value \n");
+    scanf("%f",&maximum);
+  
+} 
+
+void Assign_Random_Number()
 {
-	srand(time(NULL));
-	int rank,size,n,bin_count,min,max,i,index,result[50],max_elem=0,destination;
-	double randomArray[100], val,range,deci;
+  
+  int i;
+  float range = maximum - minimum;
+  
+    input_Array = malloc(data_count*sizeof(float));
 
-
-	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-if (rank == 0) {
-       printf("Enter Number of elements , Bucket Size, Minimum value, Maximum value \n");
-		scanf("%d",&n);	
-		scanf("%d",&bin_count);	
-		scanf("%d",&min);
-		scanf("%d",&max);	
-		  for ( i = 0; i < n; i++)
-		  {
-	
-		  	 randomArray[i]= (rand() % ((max-min) + min)) ;
-		  	  deci= fmod(rand(),0.87);
-		  	 randomArray[i] += deci-floor(deci);
-		  }
-		  
-		 
-		  for ( i = 0; i < 50; i++)
-		  {
-		  	result[i]=0;
-		  }
-			range=(double)(max-min)/bin_count;	
-		
-
-     for (destination = 1; destination < comm_sz; destination++) 
-		{
-	         MPI_Send(&n, 1, MPI_INT, destination, 0, MPI_COMM_WORLD);
-	         MPI_Send(&bin_count, 1, MPI_INT, destination, 0, MPI_COMM_WORLD);
-	         MPI_Send(&min, 1, MPI_INT, destination, 0, MPI_COMM_WORLD);
-	          MPI_Send(&max, 1, MPI_INT, destination, 0, MPI_COMM_WORLD);
-	            MPI_Send(&randomArray, 100, MPI_DOUBLE, destination, 0, MPI_COMM_WORLD);
-	         
-      }
-   } 
-   else 
-   {
-	    MPI_Recv(&n, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-	    MPI_Recv(&bin_count, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-	    MPI_Recv(&min, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-	    MPI_Recv(&max, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-	    MPI_Recv(&randomArray, 100, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &status);
-   	 	
-   }
- 
-    
-
-		printf("Rank = %d  Range = %f \n",rank,range );
-	
-	for ( i = 0; i < n; i++)
-	{
-		printf("%d \t",&randomArray[i] );
-	}
-
-
-	for ( i = 0; i < n  && i % size==0; i++)
-	{
-		index=(randomArray[i])/range;
-		result[index]= result[index]++;
-		max_elem=index<max_elem?max_elem:index;
-		
-	}
-	 
-    if(rank=size-1)
-    {
-
-		for (int i = 0; i < max_elem; ++i)
-		{
-			printf("%d ---> %d\n ",i ,result[i]);
-		}
-
+    printf("Random Generated Array :\n");
+    for(i=0;i<data_count;i++) {
+      input_Array[i] = (float) rand() / (float) RAND_MAX * range + minimum;
+    printf("%f\n",input_Array[i] );
     }
-    MPI_Bcast(&result, 50, MPI_INT, rank, MPI_COMM_WORLD);
-	  MPI_Bcast(&max_elem, 1, MPI_INT, rank, MPI_COMM_WORLD);
-    
+
+} 
 
 
+void display() {
 
-	MPI_Finalize();
+  int indx, k;
 
-return -1;
+  for(indx = 0; indx< bin_ct; indx++) 
+  {
+    printf("%15.3f \t ",boundries[indx]);
+    printf("  %d\n",counts[indx]);
+  }
+} 
+
+void *calculate(void* rank) {
+   long my_rank = (long) rank;
+   int i, j;
+   int sz = data_count/total_threads; 
+   int start_i = my_rank*sz;
+   int end_i = start_i + sz - 1;
+ pthread_mutex_lock(&pthread);
+for(i = start_i; i <= end_i; i++) 
+{
+   
+     for(bin = 0; bin < bin_ct; bin++) 
+    {
+       if(input_Array[i] <= boundries[bin]){
+         break;
+       }
+    }
+    counts[bin]=counts[bin]+1;
+  }
+    pthread_mutex_unlock(&pthread);
+
+   return NULL;
+}  
+
+int main(int argc, char* argv[]) {
+
+  long       th;
+   pthread_t* thread_handles;
+
+  
+   total_threads = strtol(argv[1], NULL, 10);
+   thread_handles = malloc(total_threads*sizeof(pthread_t));
+ 
+  Read_Data();
 
 
+  boundries = malloc(sizeof(float)*bin_ct);
+  // bins = malloc(sizeof(int)*bin_ct);
+  counts = malloc(sizeof(int)*bin_ct);
+  
+
+ for(i = 0; i < bin_ct; i++) {
+    interval=(float)( (float)(maximum-minimum) / bin_ct);
+    boundries[i] = (float)( interval * (float)(i+1)) +(float) minimum;
+    counts[i] = 0;
+  }
+
+  Assign_Random_Number();
+
+   pthread_mutex_init(&pthread, NULL);  
+
+ for (th = 0; th < total_threads; th++)
+      pthread_create(&thread_handles[th], NULL, calculate, (void*) th);
+
+   for (th = 0; th < total_threads; th++)
+      pthread_join(thread_handles[th], NULL);
+
+  
+    display();
+  
+  free(boundries);free(counts);
+  free(input_Array);
+
+
+  return 0;
 }
+
+
